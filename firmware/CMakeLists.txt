@@ -10,7 +10,7 @@ pico_sdk_init()
 
 
 pico_define_boot_stage2(boot_div4 ${PICO_DEFAULT_BOOT_STAGE2_FILE})
-target_compile_definitions(boot_div4 PRIVATE PICO_FLASH_SPI_CLKDIV=4)
+target_compile_definitions(boot_div4 PRIVATE PICO_FLASH_SPI_CLKDIV=8)
 
 
 foreach(BUILD_CONFIG 2MBit 1MBit_Clock)
@@ -71,3 +71,4 @@ target_compile_definitions(PicoROM-1MBit_Clock-${FILENAME_VERSION} PRIVATE
 )
 
 set_target_properties(PicoROM-2MBit-${FILENAME_VERSION} PROPERTIES EXCLUDE_FROM_ALL FALSE)
+set_target_properties(PicoROM-1MBit_Clock-${FILENAME_VERSION} PROPERTIES EXCLUDE_FROM_ALL FALSE)
