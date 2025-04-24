@@ -1,0 +1,54 @@
+
+; Data pin output program
+; 1 op
+.program data_output
+.wrap_target
+    out pins, 8          ; pull from fifo and send to data pins
+.wrap
+
+; OR /OE and /CS and set the buffer OE
+; 4 ops
+; should only need two ops but the stupid thing won't let you mask
+; the next bit and still use it as an input for i2c
+; sideset LS245 enable based on pins 20 & 21
+.program set_output_enable
+.origin 0
+.side_set 1
+	mov pc, pins side 0		; 00, enable '245
+	mov pc, pins side 1		; 10
+	mov pc, pins side 0		; 01, enable '245
+	mov pc, pins side 1		; 11
+
+; OR /OE and /CS and set 4 pindirs
+; 4 ops
+.program set_pindir
+.origin 0
+.side_set 4 pindirs
+    mov pc, pins side 0xf
+    mov pc, pins side 0
+    mov pc, pins side 0xf
+    mov pc, pins side 0
+
+; Report activity to CPU
+; 8 ops
+.program report_data_access
+wait_oe:
+    wait 0 gpio 20
+    ;jmp x-- wait_oe  ; if /OE or /CS are high, check again
+    irq nowait 0 rel ; tell the cpu
+
+.wrap_target
+wait_change:
+;    mov osr, pins    ; read in all pins
+;    out y, 18
+;    out null, 2
+;    out y, 1
+;    mov osr, pins    ; read in all pins
+;    out x, 18
+;    out null, 2
+;    out x, 1
+;    jmp x!=y wait_oe ; if any have changed, restart and check oe again
+; simplify to only watch OE&CS, would break continual reads without toggling oe or cs maybe
+	wait 1 gpio 20
+    jmp wait_oe ; if any have changed, restart and check oe again
+.wrap

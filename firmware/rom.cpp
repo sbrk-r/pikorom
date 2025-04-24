@@ -7,6 +7,8 @@
 #include "system.h"
 #include <hardware/gpio.h>
 
+#include "sw_i2c.h"
+#include "pcf8574.h"
 uint8_t *rom_data = (uint8_t *)0x21000000; // Start of 4 64kb sram banks
 
 uint32_t core1_stack[8];
@@ -55,11 +57,11 @@ static void rom_pio_init_output_enable_program()
         PRG_LOCAL(prg_set_output_enable, p, sm, offset, cfg);
 
         // set oe pin directions, data pin direction will be set by the state machine
-        pio_sm_set_consecutive_pindirs(p, sm, BASE_OE_PIN, N_OE_PINS, false);
-        pio_sm_set_consecutive_pindirs(p, sm, BUF_OE_PIN, 1, true);
+        pio_sm_set_consecutive_pindirs(p, sm, CS_PIN_BASE, N_OE_PINS, false); /* in */
+        pio_sm_set_consecutive_pindirs(p, sm, BUF_OE_PIN, 1, true); /* out */
 
         // OE pins as input
-        sm_config_set_in_pins(&cfg, BASE_OE_PIN);
+        sm_config_set_in_pins(&cfg, CS_PIN_BASE);
         sm_config_set_sideset_pins(&cfg, BUF_OE_PIN);
 
         // Data pins as output, but just the direction is set
@@ -80,7 +82,7 @@ static void rom_pio_init_pindirs_program()
         PRG_LOCAL(prg_set_pindir_lo, p, sm, offset, cfg);
 
         // OE pins as input
-        sm_config_set_in_pins(&cfg, BASE_OE_PIN);
+        sm_config_set_in_pins(&cfg, CS_PIN_BASE);
         sm_config_set_sideset_pins(&cfg, BASE_DATA_PIN);
 
         pio_sm_init(p, sm, offset, &cfg);
@@ -92,7 +94,7 @@ static void rom_pio_init_pindirs_program()
         PRG_LOCAL(prg_set_pindir_hi, p, sm, offset, cfg);
 
         // OE pins as input
-        sm_config_set_in_pins(&cfg, BASE_OE_PIN);
+        sm_config_set_in_pins(&cfg, CS_PIN_BASE);
         sm_config_set_sideset_pins(&cfg, BASE_DATA_PIN + 4);
 
         pio_sm_init(p, sm, offset, &cfg);
@@ -120,6 +122,7 @@ static void rom_pio_init_output_enable_report_program()
     }
 }
 
+#if !defined(SLAVTEK)
 static void rom_pio_init_tca_program()
 {
     if (prg_write_tca_bits.valid())
@@ -138,6 +141,7 @@ static void rom_pio_init_tca_program()
         pio_sm_set_enabled(p, sm, true);
     }
 }
+#endif 
 
 void rom_init_programs()
 {
@@ -154,10 +158,10 @@ void rom_init_programs()
 
     for (uint ofs = 0; ofs < N_OE_PINS; ofs++)
     {
-        gpio_init(BASE_OE_PIN + ofs);
-        gpio_set_dir(BASE_OE_PIN + ofs, false);
-        gpio_set_input_hysteresis_enabled(BASE_OE_PIN + ofs, false);
-        syscfg_hw->proc_in_sync_bypass |= 1 << (BASE_OE_PIN + ofs);
+        gpio_init(CS_PIN_BASE + ofs);
+        gpio_set_dir(CS_PIN_BASE + ofs, false);
+        gpio_set_input_hysteresis_enabled(CS_PIN_BASE + ofs, false);
+        syscfg_hw->proc_in_sync_bypass |= 1 << (CS_PIN_BASE + ofs);
     }
 
     pio_gpio_init(prg_set_output_enable.pio(), BUF_OE_PIN);
@@ -166,19 +170,23 @@ void rom_init_programs()
     gpio_set_inover(BUF_OE_PIN, GPIO_OVERRIDE_LOW);
     gpio_set_slew_rate(BUF_OE_PIN, GPIO_SLEW_RATE_FAST);
 
+#if !defined(SLAVTEK)
     pio_gpio_init(prg_write_tca_bits.pio(), TCA_EXPANDER_PIN);
     gpio_set_input_enabled(TCA_EXPANDER_PIN, false);
     gpio_set_inover(TCA_EXPANDER_PIN, GPIO_OVERRIDE_LOW);
     gpio_set_drive_strength(TCA_EXPANDER_PIN, GPIO_DRIVE_STRENGTH_2MA);
+#endif
 
     rom_pio_init_output_program();
     rom_pio_init_pindirs_program();
     rom_pio_init_output_enable_program();
     rom_pio_init_output_enable_report_program();
+#if !defined(SLAVTEK)
     rom_pio_init_tca_program();
 
     tca_set_pins(0x00);
     tca_set_pins(0x00);
+#endif
 }
 
 uint8_t *rom_get_buffer()
@@ -210,6 +218,7 @@ bool rom_check_oe()
     return false;
 }
 
+#if !defined(SLAVTEK)
 static uint8_t tca_pins_state = 0x0;
 void tca_set_pins(uint8_t pins)
 {
@@ -231,3 +240,25 @@ void tca_set_pin(int pin, bool en)
         tca_set_pins(new_state);
     }
 }
+#else
+static uint8_t pca_pins_state = 0xff;
+void pca_set_pins(uint8_t pins)
+{ 
+    pcf8574_write(pins);
+    pca_pins_state = pins;
+}
+
+void pca_set_pin(int pin, bool en)
+{
+    uint8_t new_state = pca_pins_state;
+    if (en)
+        new_state |= (1 << pin);
+    else
+        new_state &= ~(1 << pin);
+
+    if (new_state != pca_pins_state)
+    {
+        pca_set_pins(new_state);
+    }
+}
+#endif

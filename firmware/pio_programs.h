@@ -44,8 +44,12 @@ struct PIOProgram
     pio_sm_config c = prg.config();
 
 extern PIOProgram prg_comms_detect;
+#if defined(FEATURE_CLOCK)
 extern PIOProgram prg_comms_clock;
+#endif
+#if !defined(SLAVTEK)
 extern PIOProgram prg_write_tca_bits;
+#endif
 extern PIOProgram prg_data_output;
 extern PIOProgram prg_set_output_enable;
 extern PIOProgram prg_set_pindir_hi;

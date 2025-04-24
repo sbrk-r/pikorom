@@ -15,6 +15,8 @@
 #include "str_util.h"
 #include "system.h"
 
+#include "sw_i2c.h"
+#include "pcf8574.h"
 
 // Dummy atexit implementation because some SDK/newlib versions don't strip
 // atexit and it uses several 100bytes of RAM
@@ -103,18 +105,21 @@ bool activity_timer_callback(repeating_timer_t * /*unused*/)
 
         link_count = 0;
     }
-
-    tca_set_pin(TCA_LINK_PIN, link_count < link_duty);
-    tca_set_pin(TCA_READ_PIN, activity_count < activity_duty);
-
+#if defined(SLAVTEK)
+    pca_set_pin(PCA_READ_PIN, !(link_count < link_duty));
+    pca_set_pin(PCA_LINK_PIN, !(activity_count < activity_duty));
+#else
+    tca_set_pin(TCA_LINK_PIN, !(link_count < link_duty));
+    tca_set_pin(TCA_READ_PIN, !(activity_count < activity_duty));
+#endif
     activity_count++;
     link_count++;
-
     return true;
 }
 
 ResetLevel current_reset = ResetLevel::Z;
 
+#if !defined(SLAVTEK)
 void reset_set(ResetLevel level)
 {
     switch (level)
@@ -137,6 +142,30 @@ void reset_set(ResetLevel level)
             break;
     }
 }
+#else
+void reset_set(ResetLevel level)
+{
+    switch (level)
+    {
+        case ResetLevel::Low:
+            pca_set_pin(PCA_RESET_VALUE_PIN, false);
+            pca_set_pin(PCA_RESET_PIN, RESET_ACTIVE);
+            current_reset = ResetLevel::Low;
+            break;
+
+        case ResetLevel::High:
+            pca_set_pin(PCA_RESET_VALUE_PIN, true);
+            pca_set_pin(PCA_RESET_PIN, RESET_ACTIVE);
+            current_reset = ResetLevel::High;
+            break;
+
+        default:
+            pca_set_pin(PCA_RESET_PIN, RESET_INACTIVE);
+            current_reset = ResetLevel::Z;
+            break;
+    }
+}
+#endif
 
 void reset_to_string(ResetLevel level, char *s, size_t sz)
 {
@@ -332,6 +361,13 @@ int main()
     add_repeating_timer_ms(10, activity_timer_callback, nullptr, &activity_timer);
 
     rom_service_start();
+
+#if defined(SLAVTEK)
+    gpio_set_function(PCA_SCL_PIN, GPIO_FUNC_SIO);
+    gpio_set_function(PCA_SDA_PIN, GPIO_FUNC_SIO);
+    i2c_init(PCA_SDA_PIN, PCA_SCL_PIN);
+    pcf8574_init(PCA_ADDR);
+#endif
 
     while (true)
     {
